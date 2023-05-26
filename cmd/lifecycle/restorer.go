@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -35,6 +36,17 @@ type restoreCmd struct {
 // DefineFlags defines the flags that are considered valid and reads their values (if provided).
 func (r *restoreCmd) DefineFlags() {
 	switch {
+	case r.PlatformAPI.AtLeast("0.11"):
+		cli.FlagBuildImage(&r.BuildImageRef)
+		cli.FlagCacheDir(&r.CacheDir)
+		cli.FlagCacheImage(&r.CacheImageRef)
+		cli.FlagGroupPath(&r.GroupPath)
+		cli.FlagLayersDir(&r.LayersDir)
+		cli.FlagUID(&r.UID)
+		cli.FlagGID(&r.GID)
+		cli.FlagAnalyzedPath(&r.AnalyzedPath)
+		cli.FlagSkipLayers(&r.SkipLayers)
+		cli.FlagInsecureRegistries(&r.InsecureRegistries)
 	case r.PlatformAPI.AtLeast("0.10"):
 		cli.FlagBuildImage(&r.BuildImageRef)
 		cli.FlagCacheDir(&r.CacheDir)
@@ -105,7 +117,7 @@ func (r *restoreCmd) Exec() error {
 		return err
 	}
 
-	cacheStore, err := initCache(r.CacheImageRef, r.CacheDir, r.keychain)
+	cacheStore, err := initCache(r.CacheImageRef, r.CacheDir, r.keychain, r.InsecureRegistries)
 	if err != nil {
 		return err
 	}
@@ -135,7 +147,7 @@ func (r *restoreCmd) pullBuilderImageIfNeeded() error {
 		}
 		return nil
 	}
-	ref, authr, err := auth.ReferenceForRepoName(r.keychain, r.BuildImageRef)
+	ref, authr, err := r.referenceForRepoName(r.keychain, r.BuildImageRef)
 	if err != nil {
 		return fmt.Errorf("failed to get reference: %w", err)
 	}
@@ -170,6 +182,34 @@ func (r *restoreCmd) pullBuilderImageIfNeeded() error {
 	}
 	analyzedMD.BuildImage = &platform.ImageIdentifier{Reference: digestRef.String()}
 	return encoding.WriteTOML(r.AnalyzedPath, analyzedMD)
+}
+
+func (r *restoreCmd) referenceForRepoName(keychain authn.Keychain, ref string) (name.Reference, authn.Authenticator, error) {
+	var (
+		authr    authn.Authenticator
+		insecure = false
+	)
+	if len(r.InsecureRegistries) > 0 {
+		for _, registry := range r.InsecureRegistries {
+			if strings.HasPrefix(ref, registry) {
+				insecure = true
+			}
+		}
+	}
+	opts := []name.Option{name.WeakValidation}
+	if insecure {
+		opts = append(opts, name.Insecure)
+	}
+	reference, err := name.ParseReference(ref, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	authr, err = keychain.Resolve(reference.Context().Registry)
+	if err != nil {
+		return nil, nil, err
+	}
+	return reference, authr, nil
 }
 
 func (r *restoreCmd) restoresLayerMetadata() bool {

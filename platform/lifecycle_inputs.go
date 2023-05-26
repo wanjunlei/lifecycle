@@ -52,6 +52,7 @@ type LifecycleInputs struct {
 	UseDaemon             bool
 	AdditionalTags        str.Slice // str.Slice satisfies the `Value` interface required by the `flag` package
 	KanikoCacheTTL        time.Duration
+	InsecureRegistries    str.Slice
 }
 
 func (i *LifecycleInputs) DestinationImages() []string {

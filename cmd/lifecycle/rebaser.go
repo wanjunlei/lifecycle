@@ -32,6 +32,9 @@ type rebaseCmd struct {
 
 // DefineFlags defines the flags that are considered valid and reads their values (if provided).
 func (r *rebaseCmd) DefineFlags() {
+	if r.PlatformAPI.AtLeast("0.11") {
+		cli.FlagInsecureRegistries(&r.InsecureRegistries)
+	}
 	cli.FlagGID(&r.GID)
 	cli.FlagReportPath(&r.ReportPath)
 	cli.FlagRunImage(&r.RunImageRef)
@@ -131,10 +134,17 @@ func (r *rebaseCmd) setAppImage() error {
 		if err != nil {
 			return err
 		}
+		var opts []remote.ImageOption
+		if len(r.InsecureRegistries) > 0 {
+			for _, registry := range r.InsecureRegistries {
+				opts = append(opts, remote.WithRegistrySetting(registry, true, true))
+			}
+		}
+		opts = append(opts, remote.FromBaseImage(r.OutputImageRef))
 		r.appImage, err = remote.NewImage(
 			r.OutputImageRef,
 			keychain,
-			remote.FromBaseImage(r.OutputImageRef),
+			opts...,
 		)
 	}
 	if err != nil || !r.appImage.Found() {

@@ -145,6 +145,10 @@ func FlagVersion(showVersion *bool) {
 	flagSet.BoolVar(showVersion, "version", false, "show version")
 }
 
+func FlagInsecureRegistries(registries *str.Slice) {
+	flagSet.Var(registries, "insecure-registry", "insecure registries")
+}
+
 // deprecated
 
 func DeprecatedFlagRunImage(deprecatedRunImage *string) {

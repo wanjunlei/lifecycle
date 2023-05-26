@@ -43,6 +43,7 @@ type exportData struct {
 func (e *exportCmd) DefineFlags() {
 	if e.PlatformAPI.AtLeast("0.11") {
 		cli.FlagLauncherSBOMDir(&e.LauncherSBOMDir)
+		cli.FlagInsecureRegistries(&e.InsecureRegistries)
 	}
 	cli.FlagAnalyzedPath(&e.AnalyzedPath)
 	cli.FlagAppDir(&e.AppDir)
@@ -113,7 +114,7 @@ func (e *exportCmd) Exec() error {
 	if err = verifyBuildpackApis(group); err != nil {
 		return err
 	}
-	cacheStore, err := initCache(e.CacheImageRef, e.CacheDir, e.keychain)
+	cacheStore, err := initCache(e.CacheImageRef, e.CacheDir, e.keychain, e.InsecureRegistries)
 	if err != nil {
 		return err
 	}
@@ -244,9 +245,12 @@ func (e *exportCmd) initDaemonAppImage(analyzedMD platform.AnalyzedMetadata) (im
 }
 
 func (e *exportCmd) initRemoteAppImage(analyzedMD platform.AnalyzedMetadata) (imgutil.Image, string, error) {
-	var opts = []remote.ImageOption{
-		remote.FromBaseImage(e.RunImageRef),
-	}
+	var (
+		opts = []remote.ImageOption{
+			remote.FromBaseImage(e.RunImageRef),
+		}
+		insecureRegistryOpts []remote.ImageOption
+	)
 
 	if analyzedMD.PreviousImage != nil {
 		cmd.DefaultLogger.Infof("Reusing layers from image '%s'", analyzedMD.PreviousImage.Reference)
@@ -257,16 +261,22 @@ func (e *exportCmd) initRemoteAppImage(analyzedMD platform.AnalyzedMetadata) (im
 		opts = append(opts, remote.WithCreatedAt(e.customSourceDateEpoch()))
 	}
 
+	if len(e.InsecureRegistries) > 0 {
+		for _, registry := range e.InsecureRegistries {
+			insecureRegistryOpts = append(insecureRegistryOpts, remote.WithRegistrySetting(registry, true, true))
+		}
+	}
+
 	appImage, err := remote.NewImage(
 		e.OutputImageRef,
 		e.keychain,
-		opts...,
+		append(opts, insecureRegistryOpts...)...,
 	)
 	if err != nil {
 		return nil, "", cmd.FailErr(err, "create new app image")
 	}
 
-	runImage, err := remote.NewImage(e.RunImageRef, e.keychain, remote.FromBaseImage(e.RunImageRef))
+	runImage, err := remote.NewImage(e.RunImageRef, e.keychain, append(insecureRegistryOpts, remote.FromBaseImage(e.RunImageRef))...)
 	if err != nil {
 		return nil, "", cmd.FailErr(err, "access run image")
 	}

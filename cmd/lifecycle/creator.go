@@ -30,6 +30,7 @@ func (c *createCmd) DefineFlags() {
 	if c.PlatformAPI.AtLeast("0.11") {
 		cli.FlagBuildConfigDir(&c.BuildConfigDir)
 		cli.FlagLauncherSBOMDir(&c.LauncherSBOMDir)
+		cli.FlagInsecureRegistries(&c.InsecureRegistries)
 	}
 	cli.FlagAppDir(&c.AppDir)
 	cli.FlagBuildpacksDir(&c.BuildpacksDir)
@@ -90,14 +91,11 @@ func (c *createCmd) Privileges() error {
 }
 
 func (c *createCmd) Exec() error {
-	cacheStore, err := initCache(c.CacheImageRef, c.CacheDir, c.keychain)
+	cacheStore, err := initCache(c.CacheImageRef, c.CacheDir, c.keychain, c.InsecureRegistries)
 	if err != nil {
 		return err
 	}
 	dirStore := platform.NewDirStore(c.BuildpacksDir, "")
-	if err != nil {
-		return err
-	}
 
 	// Analyze, Detect
 	var (
@@ -110,10 +108,10 @@ func (c *createCmd) Exec() error {
 		analyzerFactory := lifecycle.NewAnalyzerFactory(
 			c.PlatformAPI,
 			&cmd.BuildpackAPIVerifier{},
-			NewCacheHandler(c.keychain),
+			NewCacheHandler(c.keychain, c.InsecureRegistries),
 			lifecycle.NewConfigHandler(),
-			NewImageHandler(c.docker, c.keychain),
-			NewRegistryHandler(c.keychain),
+			NewImageHandler(c.docker, c.keychain, c.InsecureRegistries),
+			NewRegistryHandler(c.keychain, c.InsecureRegistries),
 		)
 		analyzer, err := analyzerFactory.NewAnalyzer(
 			c.AdditionalTags,
@@ -173,10 +171,10 @@ func (c *createCmd) Exec() error {
 		analyzerFactory := lifecycle.NewAnalyzerFactory(
 			c.PlatformAPI,
 			&cmd.BuildpackAPIVerifier{},
-			NewCacheHandler(c.keychain),
+			NewCacheHandler(c.keychain, c.InsecureRegistries),
 			lifecycle.NewConfigHandler(),
-			NewImageHandler(c.docker, c.keychain),
-			NewRegistryHandler(c.keychain),
+			NewImageHandler(c.docker, c.keychain, c.InsecureRegistries),
+			NewRegistryHandler(c.keychain, c.InsecureRegistries),
 		)
 		analyzer, err := analyzerFactory.NewAnalyzer(
 			c.AdditionalTags,

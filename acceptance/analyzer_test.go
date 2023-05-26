@@ -2,6 +2,7 @@ package acceptance
 
 import (
 	"fmt"
+	"github.com/sclevine/spec/report"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -12,12 +13,10 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/sclevine/spec"
-	"github.com/sclevine/spec/report"
-
 	"github.com/buildpacks/lifecycle/api"
 	"github.com/buildpacks/lifecycle/platform"
 	h "github.com/buildpacks/lifecycle/testhelpers"
+	"github.com/sclevine/spec"
 )
 
 var cacheFixtureDir string
@@ -981,6 +980,61 @@ func testAnalyzerFunc(platformAPI string) func(t *testing.T, when spec.G, it spe
 				})
 			})
 		})
+
+		when("with insecure registry", func() {
+			when("run image", func() {
+				when("provided", func() {
+					it("is recorded in analyzed.toml", func() {
+						h.SkipIf(t, api.MustParse(platformAPI).LessThan("0.11"), "Platform API < 0.11 does not support -insecure-registry")
+
+						h.DockerRunAndCopy(t,
+							containerName,
+							copyDir,
+							ctrPath("/layers/analyzed.toml"),
+							analyzeImage,
+							h.WithFlags(
+								"--env", "CNB_PLATFORM_API="+platformAPI,
+								"--env", "CNB_REGISTRY_AUTH="+analyzeRegAuthConfig,
+								"--network", analyzeRegNetwork,
+								"--add-host", insecureHost(),
+							),
+							h.WithArgs(ctrPath(analyzerPath), "-run-image", insecureRepoName(analyzeRegFixtures.ReadOnlyRunImage),
+								fmt.Sprintf("--insecure-registry=%s:%s", insecureRegistryDomain, analyzeTest.targetRegistry.registry.Port),
+								insecureRepoName(analyzeRegFixtures.SomeAppImage)),
+						)
+
+						analyzedMD := assertAnalyzedMetadata(t, filepath.Join(copyDir, "analyzed.toml"))
+						h.AssertStringContains(t, analyzedMD.RunImage.Reference, insecureRepoName(analyzeRegFixtures.ReadOnlyRunImage)+"@sha256:")
+					})
+				})
+
+				when("not provided", func() {
+					it("falls back to CNB_RUN_IMAGE", func() {
+						h.SkipIf(t, api.MustParse(platformAPI).LessThan("0.11"), "Platform API < 0.11 does not support -insecure-registry")
+
+						h.DockerRunAndCopy(t,
+							containerName,
+							copyDir,
+							ctrPath("/layers/analyzed.toml"),
+							analyzeImage,
+							h.WithFlags(
+								"--env", "CNB_PLATFORM_API="+platformAPI,
+								"--env", "CNB_REGISTRY_AUTH="+analyzeRegAuthConfig,
+								"--env", "CNB_RUN_IMAGE="+insecureRepoName(analyzeRegFixtures.ReadOnlyRunImage),
+								"--network", analyzeRegNetwork,
+								"--add-host", insecureHost(),
+							),
+							h.WithArgs(ctrPath(analyzerPath),
+								"--insecure-registry", insecureRegistryDomain+":"+analyzeTest.targetRegistry.registry.Port,
+								insecureRepoName(analyzeRegFixtures.SomeAppImage)),
+						)
+
+						analyzedMD := assertAnalyzedMetadata(t, filepath.Join(copyDir, "analyzed.toml"))
+						h.AssertStringContains(t, analyzedMD.RunImage.Reference, insecureRepoName(analyzeRegFixtures.ReadOnlyRunImage)+"@sha256:")
+					})
+				})
+			})
+		})
 	}
 }
 
@@ -1052,4 +1106,17 @@ func assertWritesStoreTomlOnly(t *testing.T, dir, output string) {
 
 func flatPrint(arr []string) string {
 	return strings.Join(arr, " ")
+}
+
+func insecureHost() string {
+	ip := analyzeTest.targetRegistry.registry.Host
+	if ip == "localhost" {
+		ip = "127.0.0.1"
+	}
+
+	return insecureRegistryDomain + ":" + ip
+}
+
+func insecureRepoName(repo string) string {
+	return insecureRegistryDomain + ":" + strings.Split(repo, ":")[1]
 }

@@ -30,22 +30,38 @@ func NewImageCache(origImage imgutil.Image, newImage imgutil.Image) *ImageCache 
 	}
 }
 
-func NewImageCacheFromName(name string, keychain authn.Keychain) (*ImageCache, error) {
+func NewImageCacheFromName(name string, keychain authn.Keychain, insecureRegistries []string) (*ImageCache, error) {
+	var (
+		insecureRegistryOpts []remote.ImageOption
+		origImageOpts        []remote.ImageOption
+		emptyImageOpts       []remote.ImageOption
+	)
+	if len(insecureRegistries) > 0 {
+		for _, registry := range insecureRegistries {
+			insecureRegistryOpts = append(insecureRegistryOpts, remote.WithRegistrySetting(registry, true, true))
+		}
+	}
+
+	origImageOpts = append(origImageOpts, insecureRegistryOpts...)
+	origImageOpts = append(origImageOpts, remote.FromBaseImage(name))
+	origImageOpts = append(origImageOpts, remote.WithDefaultPlatform(imgutil.Platform{OS: runtime.GOOS}))
 	origImage, err := remote.NewImage(
 		name,
 		keychain,
-		remote.FromBaseImage(name),
-		remote.WithDefaultPlatform(imgutil.Platform{OS: runtime.GOOS}),
+		origImageOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("accessing cache image %q: %v", name, err)
 	}
+
+	emptyImageOpts = append(emptyImageOpts, insecureRegistryOpts...)
+	emptyImageOpts = append(emptyImageOpts, remote.WithPreviousImage(name))
+	emptyImageOpts = append(emptyImageOpts, remote.WithDefaultPlatform(imgutil.Platform{OS: runtime.GOOS}))
+	emptyImageOpts = append(emptyImageOpts, remote.AddEmptyLayerOnSave())
 	emptyImage, err := remote.NewImage(
 		name,
 		keychain,
-		remote.WithPreviousImage(name),
-		remote.WithDefaultPlatform(imgutil.Platform{OS: runtime.GOOS}),
-		remote.AddEmptyLayerOnSave(),
+		emptyImageOpts...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating new cache image %q: %v", name, err)

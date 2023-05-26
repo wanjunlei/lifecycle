@@ -26,6 +26,20 @@ type analyzeCmd struct {
 // DefineFlags defines the flags that are considered valid and reads their values (if provided).
 func (a *analyzeCmd) DefineFlags() {
 	switch {
+	case a.PlatformAPI.AtLeast("0.11"):
+		cli.FlagAnalyzedPath(&a.AnalyzedPath)
+		cli.FlagCacheImage(&a.CacheImageRef)
+		cli.FlagGID(&a.GID)
+		cli.FlagLaunchCacheDir(&a.LaunchCacheDir)
+		cli.FlagLayersDir(&a.LayersDir)
+		cli.FlagPreviousImage(&a.PreviousImageRef)
+		cli.FlagRunImage(&a.RunImageRef)
+		cli.FlagSkipLayers(&a.SkipLayers)
+		cli.FlagStackPath(&a.StackPath)
+		cli.FlagTags(&a.AdditionalTags)
+		cli.FlagUID(&a.UID)
+		cli.FlagUseDaemon(&a.UseDaemon)
+		cli.FlagInsecureRegistries(&a.InsecureRegistries)
 	case a.PlatformAPI.AtLeast("0.9"):
 		cli.FlagAnalyzedPath(&a.AnalyzedPath)
 		cli.FlagCacheImage(&a.CacheImageRef)
@@ -103,10 +117,10 @@ func (a *analyzeCmd) Exec() error {
 	factory := lifecycle.NewAnalyzerFactory(
 		a.PlatformAPI,
 		&cmd.BuildpackAPIVerifier{},
-		NewCacheHandler(a.keychain),
+		NewCacheHandler(a.keychain, a.InsecureRegistries),
 		lifecycle.NewConfigHandler(),
-		NewImageHandler(a.docker, a.keychain),
-		NewRegistryHandler(a.keychain),
+		NewImageHandler(a.docker, a.keychain, a.InsecureRegistries),
+		NewRegistryHandler(a.keychain, a.InsecureRegistries),
 	)
 	analyzer, err := factory.NewAnalyzer(
 		a.AdditionalTags,

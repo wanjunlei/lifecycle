@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	ih "github.com/buildpacks/imgutil/testhelpers"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/registry"
 	"io"
 	"log"
 	"os"
@@ -13,10 +16,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	ih "github.com/buildpacks/imgutil/testhelpers"
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/registry"
 
 	"github.com/buildpacks/lifecycle/internal/encoding"
 
@@ -211,7 +210,7 @@ func (r *targetRegistry) start(t *testing.T) {
 
 	// Save auth config
 	os.Setenv("DOCKER_CONFIG", r.dockerConfigDir)
-	r.authConfig, err = auth.BuildEnvVar(authn.DefaultKeychain, r.registry.RepoName("some-repo")) // repo name doesn't matter
+	r.authConfig, err = r.createAuthConfig()
 	h.AssertNil(t, err)
 
 	r.createFixtures(t)
@@ -319,6 +318,26 @@ func (r *targetRegistry) stop(t *testing.T) {
 	r.registry.Stop(t)
 	os.Unsetenv("DOCKER_CONFIG")
 	os.RemoveAll(r.dockerConfigDir)
+}
+
+func (r *targetRegistry) createAuthConfig() (string, error) {
+	authConfig, err := auth.BuildEnvVar(authn.DefaultKeychain, r.registry.RepoName("some-repo")) // repo name doesn't matter
+	if err != nil {
+		return "", err
+	}
+
+	authData := make(map[string]string)
+	if err := json.Unmarshal([]byte(authConfig), &authData); err != nil {
+		return "", err
+	}
+
+	for _, v := range authData {
+		authData[insecureRegistryDomain+":"+r.registry.Port] = v
+	}
+
+	// add an auth for insecure registry
+	bs, err := json.Marshal(authData)
+	return string(bs), err
 }
 
 func buildRegistryImage(t *testing.T, repoName, context string, registry *ih.DockerRegistry, buildArgs ...string) string {

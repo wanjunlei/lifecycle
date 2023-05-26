@@ -38,6 +38,7 @@ var (
 	tags                 stringSlice // tag reference to write lifecycle image
 	targetOS, targetArch string      // operating system and CPU architecture
 	useDaemon            bool        // export to docker daemon
+	insecureRegistries   stringSlice // insecure registries
 )
 
 type stringSlice []string
@@ -58,6 +59,7 @@ func main() {
 	flag.StringVar(&targetArch, "arch", runtime.GOARCH, "CPU architecture")
 	flag.Var(&tags, "tag", "tag reference to write lifecycle image")
 	flag.BoolVar(&useDaemon, "daemon", false, "export to docker daemon")
+	flag.Var(&insecureRegistries, "insecure-registry", "insecure registries")
 
 	flag.Parse()
 	if lifecyclePath == "" || len(tags) == 0 {
@@ -100,10 +102,18 @@ func main() {
 		}
 	} else {
 		var err error
-		img, err = remote.NewImage(tags[0], authn.DefaultKeychain, remote.FromBaseImage(baseImage), remote.WithDefaultPlatform(imgutil.Platform{
+		var opts []remote.ImageOption
+		if len(insecureRegistries) > 0 {
+			for _, registry := range insecureRegistries {
+				opts = append(opts, remote.WithRegistrySetting(registry, true, true))
+			}
+		}
+		opts = append(opts, remote.FromBaseImage(baseImage))
+		opts = append(opts, remote.WithDefaultPlatform(imgutil.Platform{
 			Architecture: targetArch,
 			OS:           targetOS,
 		}))
+		img, err = remote.NewImage(tags[0], authn.DefaultKeychain, opts...)
 		if err != nil {
 			log.Fatal("Failed to create remote image:", err)
 		}

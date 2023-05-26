@@ -214,10 +214,10 @@ func (e *Exporter) copyDefaultSBOMsForComponent(component, dstDir string) error 
 func (e *Exporter) addBuildpackLayers(opts ExportOptions, meta *platform.LayersMetadata) error {
 	for _, bp := range e.Buildpacks {
 		bpDir, err := buildpack.ReadLayersDir(opts.LayersDir, bp, e.Logger)
-		e.Logger.Debugf("Processing buildpack directory: %s", bpDir.Path)
 		if err != nil {
 			return errors.Wrapf(err, "reading layers for buildpack '%s'", bp.ID)
 		}
+		e.Logger.Debugf("Processing buildpack directory: %s", bpDir.Path)
 		bpMD := buildpack.LayersMetadata{
 			ID:      bp.ID,
 			Version: bp.Version,

@@ -81,12 +81,14 @@ func subcommand(platformAPI string) {
 // handlers
 
 type DefaultCacheHandler struct {
-	keychain authn.Keychain
+	keychain           authn.Keychain
+	insecureRegistries []string
 }
 
-func NewCacheHandler(keychain authn.Keychain) *DefaultCacheHandler {
+func NewCacheHandler(keychain authn.Keychain, insecureRegistries []string) *DefaultCacheHandler {
 	return &DefaultCacheHandler{
-		keychain: keychain,
+		keychain:           keychain,
+		insecureRegistries: insecureRegistries,
 	}
 }
 
@@ -96,7 +98,7 @@ func (ch *DefaultCacheHandler) InitCache(cacheImageRef string, cacheDir string) 
 		err        error
 	)
 	if cacheImageRef != "" {
-		cacheStore, err = cache.NewImageCacheFromName(cacheImageRef, ch.keychain)
+		cacheStore, err = cache.NewImageCacheFromName(cacheImageRef, ch.keychain, ch.insecureRegistries)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating image cache")
 		}
@@ -110,15 +112,24 @@ func (ch *DefaultCacheHandler) InitCache(cacheImageRef string, cacheDir string) 
 }
 
 type DefaultImageHandler struct {
-	docker   client.CommonAPIClient
-	keychain authn.Keychain
+	docker               client.CommonAPIClient
+	keychain             authn.Keychain
+	insecureRegistryOpts []remote.ImageOption
 }
 
-func NewImageHandler(docker client.CommonAPIClient, keychain authn.Keychain) *DefaultImageHandler {
-	return &DefaultImageHandler{
+func NewImageHandler(docker client.CommonAPIClient, keychain authn.Keychain, insecureRegistries []string) *DefaultImageHandler {
+	handler := &DefaultImageHandler{
 		docker:   docker,
 		keychain: keychain,
 	}
+
+	if len(insecureRegistries) > 0 {
+		for _, registry := range insecureRegistries {
+			handler.insecureRegistryOpts = append(handler.insecureRegistryOpts, remote.WithRegistrySetting(registry, true, true))
+		}
+	}
+
+	return handler
 }
 
 func (h *DefaultImageHandler) InitImage(imageRef string) (imgutil.Image, error) {
@@ -134,10 +145,13 @@ func (h *DefaultImageHandler) InitImage(imageRef string) (imgutil.Image, error) 
 		)
 	}
 
+	var opts []remote.ImageOption
+	opts = append(opts, h.insecureRegistryOpts...)
+	opts = append(opts, remote.FromBaseImage(imageRef))
 	return remote.NewImage(
 		imageRef,
 		h.keychain,
-		remote.FromBaseImage(imageRef),
+		opts...,
 	)
 }
 
@@ -146,18 +160,27 @@ func (h *DefaultImageHandler) Docker() bool {
 }
 
 type DefaultRegistryHandler struct {
-	keychain authn.Keychain
+	keychain             authn.Keychain
+	insecureRegistryOpts []remote.ImageOption
 }
 
-func NewRegistryHandler(keychain authn.Keychain) *DefaultRegistryHandler {
-	return &DefaultRegistryHandler{
+func NewRegistryHandler(keychain authn.Keychain, insecureRegistries []string) *DefaultRegistryHandler {
+	handler := &DefaultRegistryHandler{
 		keychain: keychain,
 	}
+
+	if len(insecureRegistries) > 0 {
+		for _, registry := range insecureRegistries {
+			handler.insecureRegistryOpts = append(handler.insecureRegistryOpts, remote.WithRegistrySetting(registry, true, true))
+		}
+	}
+
+	return handler
 }
 
 func (rv *DefaultRegistryHandler) EnsureReadAccess(imageRefs ...string) error {
 	for _, imageRef := range imageRefs {
-		if err := verifyReadAccess(imageRef, rv.keychain); err != nil {
+		if err := verifyReadAccess(imageRef, rv.keychain, rv.insecureRegistryOpts); err != nil {
 			return err
 		}
 	}
@@ -166,29 +189,29 @@ func (rv *DefaultRegistryHandler) EnsureReadAccess(imageRefs ...string) error {
 
 func (rv *DefaultRegistryHandler) EnsureWriteAccess(imageRefs ...string) error {
 	for _, imageRef := range imageRefs {
-		if err := verifyReadWriteAccess(imageRef, rv.keychain); err != nil {
+		if err := verifyReadWriteAccess(imageRef, rv.keychain, rv.insecureRegistryOpts); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func verifyReadAccess(imageRef string, keychain authn.Keychain) error {
+func verifyReadAccess(imageRef string, keychain authn.Keychain, opts []remote.ImageOption) error {
 	if imageRef == "" {
 		return nil
 	}
-	img, _ := remote.NewImage(imageRef, keychain)
+	img, _ := remote.NewImage(imageRef, keychain, opts...)
 	if !img.CheckReadAccess() {
 		return errors.Errorf("ensure registry read access to %s", imageRef)
 	}
 	return nil
 }
 
-func verifyReadWriteAccess(imageRef string, keychain authn.Keychain) error {
+func verifyReadWriteAccess(imageRef string, keychain authn.Keychain, opts []remote.ImageOption) error {
 	if imageRef == "" {
 		return nil
 	}
-	img, _ := remote.NewImage(imageRef, keychain)
+	img, _ := remote.NewImage(imageRef, keychain, opts...)
 	if !img.CheckReadWriteAccess() {
 		return errors.Errorf("ensure registry read/write access to %s", imageRef)
 	}
@@ -197,13 +220,13 @@ func verifyReadWriteAccess(imageRef string, keychain authn.Keychain) error {
 
 // helpers
 
-func initCache(cacheImageTag, cacheDir string, keychain authn.Keychain) (lifecycle.Cache, error) {
+func initCache(cacheImageTag, cacheDir string, keychain authn.Keychain, insecureRegistries []string) (lifecycle.Cache, error) {
 	var (
 		cacheStore lifecycle.Cache
 		err        error
 	)
 	if cacheImageTag != "" {
-		cacheStore, err = cache.NewImageCacheFromName(cacheImageTag, keychain)
+		cacheStore, err = cache.NewImageCacheFromName(cacheImageTag, keychain, insecureRegistries)
 		if err != nil {
 			return nil, cmd.FailErr(err, "create image cache")
 		}

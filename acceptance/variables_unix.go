@@ -6,6 +6,7 @@ package acceptance
 import "path"
 
 const (
+	insecureRegistryDomain = "insecure.domain.com"
 	containerBaseImage     = "busybox"
 	containerBaseImageFull = "ubuntu:bionic"
 	dockerfileName         = "Dockerfile"
